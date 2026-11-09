@@ -5,3 +5,8 @@ artifacts:
     targets:
       default:
         object: SNOWFLAKE_DEMO.CORTEX_SENSE.INVOICE_RECON_SV
+  - path: SUMMIT_RETAIL_AGENT.agent.yaml
+    type: cortex_agent
+    targets:
+      default:
+        object: SNOWFLAKE_DEMO.CORTEX_SENSE.SUMMIT_RETAIL_AGENT

@@ -1,0 +1,33 @@
+models:
+  orchestration: "auto"
+instructions:
+  response: "Lead with the answer and the number. State the definition and filters you applied in one line (for example: net of returns, excluding test and cancelled orders, fiscal year starting Feb 1). For invoice answers, name the invoice numbers and order IDs involved and say whether amounts are invoice minus Snowflake. Chart trends with data_to_chart when there are more than 3 rows."
+  orchestration: "Route by topic. Questions about invoices, uploaded or approved invoice PDFs, invoice reconciliation, match status (MATCHED, MISMATCHED, NEW), discrepancies, variances, over-billing, or orders created from invoices go to invoice_reconciliation. Retail performance questions (net revenue, orders, returns and refunds, products, brands, stores, channels, regions, loyalty customers, campaigns, fiscal years) go to retail_sales_context: always call retail_sales_context first with the user question verbatim before writing any SQL. Use ontology_node documents for metric definitions, table_entity documents for grain, joins and default filters, and qbe documents as SQL precedent (prefer the highest EXECUTION_COUNT). Apply every returned correction. Then run SQL with system_execute_sql. Apply the default filters from the context unless the user overrides them. When a question spans both (for example invoiced amounts versus order revenue), use invoice_reconciliation for the invoice side and retail_sales_context for the order side, then combine the results. If a table is not readable by the user, say so rather than substituting another table."
+  sample_questions:
+    - question: "How many invoices matched, mismatched, or were new?"
+    - question: "Which mismatched invoices have the largest variance?"
+    - question: "What are the most common invoice discrepancy types?"
+    - question: "What was net revenue in FY2025?"
+tools:
+  - tool_spec:
+      type: "cortex_sense"
+      name: "retail_sales_context"
+      description: "Business context for Summit Outfitters retail: net revenue, orders, returns and refunds, products and private-label brand, stores and online channel, regions, loyalty customers, marketing campaigns and fiscal-year reporting."
+  - tool_spec:
+      type: "cortex_analyst_text_to_sql"
+      name: "invoice_reconciliation"
+      description: "Approved vendor invoices extracted from PDF with AI_EXTRACT and reconciled against Summit Outfitters orders: invoice headers (number, order, customer, store, subtotal, discount, shipping, total, match status MATCHED/MISMATCHED/NEW, variance, approver and approval time), invoice line items (SKU, quantity, unit price, discount, line amount, line status), and field-level discrepancies (field, invoice value, Snowflake value, dollar impact). Use for match rates, discrepancy analysis, variances and orders created from invoices."
+  - tool_spec:
+      type: "data_to_chart"
+      name: "data_to_chart"
+tool_resources:
+  retail_sales_context:
+    context_name: "SNOWFLAKE_DEMO.CORTEX_SENSE.RETAIL_SALES"
+    execution_environment:
+      type: "warehouse"
+      warehouse: "COMPUTE_WH"
+  invoice_reconciliation:
+    semantic_view: "SNOWFLAKE_DEMO.CORTEX_SENSE.INVOICE_RECON_SV"
+    execution_environment:
+      type: "warehouse"
+      warehouse: "COMPUTE_WH"
