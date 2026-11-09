@@ -1,0 +1,341 @@
+name: INVOICE_RECON_SV
+description: 'Invoice reconciliation for Summit Outfitters: vendor invoices ingested
+  from PDF with AI_EXTRACT, their line items, and field-level discrepancies against
+  ORDERS / ORDER_ITEMS. MATCH_STATUS is MATCHED, MISMATCHED, or NEW (order created
+  on approval).'
+tables:
+  - name: INVOICES
+    description: 'Approved vendor invoices ingested from PDF via AI_EXTRACT. Grain:
+      invoice. Reconciled against ORDERS.'
+    base_table:
+      database: SNOWFLAKE_DEMO
+      schema: CORTEX_SENSE
+      table: INVOICES
+    primary_key:
+      columns:
+        - INVOICE_ID
+    dimensions:
+      - name: INVOICE_ID
+        description: Primary key (UUID)
+        expr: INVOICE_ID
+        data_type: VARCHAR
+      - name: INVOICE_NUMBER
+        description: Vendor invoice number printed on the PDF, e.g. INV-2026-000101.
+          Unique
+        expr: INVOICE_NUMBER
+        data_type: VARCHAR
+      - name: ORDER_ID
+        description: Order number on the invoice. FK to ORDERS.ORDER_ID (for NEW invoices
+          the order is created on approval)
+        expr: ORDER_ID
+        data_type: NUMBER
+      - name: CUSTOMER_NAME
+        expr: CUSTOMER_NAME
+        data_type: VARCHAR
+      - name: CUSTOMER_EMAIL
+        expr: CUSTOMER_EMAIL
+        data_type: VARCHAR
+      - name: STORE_NAME
+        expr: STORE_NAME
+        data_type: VARCHAR
+      - name: MATCH_STATUS
+        description: MATCHED = invoice agrees with ORDERS/ORDER_ITEMS; MISMATCHED
+          = order exists but differs; NEW = order did not exist and was created on
+          approval
+        expr: MATCH_STATUS
+        data_type: VARCHAR
+      - name: DISCREPANCY_COUNT
+        expr: DISCREPANCY_COUNT
+        data_type: NUMBER
+      - name: FILE_NAME
+        expr: FILE_NAME
+        data_type: VARCHAR
+      - name: ORDER_CREATED
+        description: TRUE when approval inserted a new ORDERS/ORDER_ITEMS record
+        expr: ORDER_CREATED
+        data_type: BOOLEAN
+      - name: APPROVED_BY
+        expr: APPROVED_BY
+        data_type: VARCHAR
+    time_dimensions:
+      - name: INVOICE_DATE
+        expr: INVOICE_DATE
+        data_type: DATE
+      - name: ORDER_DATE
+        expr: ORDER_DATE
+        data_type: DATE
+      - name: APPROVED_AT
+        expr: APPROVED_AT
+        data_type: TIMESTAMP_NTZ
+    facts:
+      - name: SUBTOTAL_USD
+        description: Sum of line gross amounts (qty * unit price) as printed
+        expr: SUBTOTAL_USD
+        data_type: NUMBER
+      - name: DISCOUNT_USD
+        description: Total discount as printed
+        expr: DISCOUNT_USD
+        data_type: NUMBER
+      - name: SHIPPING_USD
+        description: Shipping as printed; not revenue
+        expr: SHIPPING_USD
+        data_type: NUMBER
+      - name: TOTAL_USD
+        description: Invoice total as printed = subtotal - discount + shipping
+        expr: TOTAL_USD
+        data_type: NUMBER
+      - name: VARIANCE_USD
+        description: Invoice total minus Snowflake expected total (NULL for NEW)
+        expr: VARIANCE_USD
+        data_type: NUMBER
+    metrics:
+      - name: INVOICE_COUNT
+        description: Number of approved invoices
+        expr: COUNT(DISTINCT INVOICE_ID)
+      - name: TOTAL_INVOICED_USD
+        description: Sum of invoice totals as printed (includes shipping)
+        expr: SUM(TOTAL_USD)
+      - name: MATCHED_INVOICES
+        description: Invoices that agree with ORDERS/ORDER_ITEMS
+        expr: SUM(IFF(MATCH_STATUS = 'MATCHED', 1, 0))
+      - name: MISMATCHED_INVOICES
+        description: Invoices whose order exists but differs from Snowflake
+        expr: SUM(IFF(MATCH_STATUS = 'MISMATCHED', 1, 0))
+      - name: NEW_INVOICES
+        description: Invoices for orders that did not exist; the order was created on approval
+        expr: SUM(IFF(MATCH_STATUS = 'NEW', 1, 0))
+      - name: MATCH_RATE
+        description: Share of invoices for existing orders that matched exactly (NEW invoices excluded)
+        expr: DIV0(SUM(IFF(MATCH_STATUS = 'MATCHED', 1, 0)), SUM(IFF(MATCH_STATUS IN ('MATCHED', 'MISMATCHED'), 1, 0)))
+      - name: NET_VARIANCE_USD
+        description: Invoice total minus Snowflake expected total, summed (positive = over-billed)
+        expr: SUM(VARIANCE_USD)
+      - name: ABSOLUTE_VARIANCE_USD
+        description: Sum of absolute invoice-vs-Snowflake differences
+        expr: SUM(ABS(VARIANCE_USD))
+      - name: ORDERS_CREATED
+        description: New ORDERS records created from approved invoices
+        expr: SUM(IFF(ORDER_CREATED, 1, 0))
+    unique_keys:
+      - columns:
+          - INVOICE_NUMBER
+  - name: INVOICE_LINES
+    description: 'Invoice line items. Grain: invoice line.'
+    base_table:
+      database: SNOWFLAKE_DEMO
+      schema: CORTEX_SENSE
+      table: INVOICE_LINES
+    primary_key:
+      columns:
+        - INVOICE_ID
+        - LINE_NUMBER
+    dimensions:
+      - name: INVOICE_ID
+        description: FK to INVOICES
+        expr: INVOICE_ID
+        data_type: VARCHAR
+      - name: LINE_NUMBER
+        expr: LINE_NUMBER
+        data_type: NUMBER
+      - name: SKU
+        description: Product SKU as printed; FK to PRODUCTS.SKU
+        expr: SKU
+        data_type: VARCHAR
+      - name: PRODUCT_ID
+        expr: PRODUCT_ID
+        data_type: NUMBER
+      - name: DESCRIPTION
+        expr: DESCRIPTION
+        data_type: VARCHAR
+      - name: QUANTITY
+        expr: QUANTITY
+        data_type: NUMBER
+      - name: LINE_STATUS
+        description: MATCHED, MISMATCHED, EXTRA (not on the order), MISSING (on the
+          order, not on the invoice), NEW
+        expr: LINE_STATUS
+        data_type: VARCHAR
+    facts:
+      - name: UNIT_PRICE
+        expr: UNIT_PRICE
+        data_type: NUMBER
+      - name: DISCOUNT_AMOUNT
+        expr: DISCOUNT_AMOUNT
+        data_type: NUMBER
+      - name: LINE_AMOUNT
+        description: Net line amount as printed = qty * unit price - discount
+        expr: LINE_AMOUNT
+        data_type: NUMBER
+    metrics:
+      - name: INVOICED_LINE_AMOUNT_USD
+        description: Net line amounts as printed on invoices
+        expr: SUM(LINE_AMOUNT)
+      - name: INVOICED_UNITS
+        description: Units on invoice lines
+        expr: SUM(QUANTITY)
+  - name: INVOICE_DISCREPANCIES
+    description: 'Field-level differences between an invoice and ORDERS/ORDER_ITEMS
+      at approval time. Grain: discrepancy.'
+    base_table:
+      database: SNOWFLAKE_DEMO
+      schema: CORTEX_SENSE
+      table: INVOICE_DISCREPANCIES
+    primary_key:
+      columns:
+        - DISCREPANCY_ID
+    dimensions:
+      - name: DISCREPANCY_ID
+        expr: DISCREPANCY_ID
+        data_type: VARCHAR
+      - name: INVOICE_ID
+        description: FK to INVOICES
+        expr: INVOICE_ID
+        data_type: VARCHAR
+      - name: SCOPE
+        description: HEADER or LINE
+        expr: SCOPE
+        data_type: VARCHAR
+      - name: LINE_NUMBER
+        expr: LINE_NUMBER
+        data_type: NUMBER
+      - name: FIELD_NAME
+        description: e.g. quantity, unit_price, shipping_usd, total_usd, customer_email,
+          line (missing/extra)
+        expr: FIELD_NAME
+        data_type: VARCHAR
+      - name: INVOICE_VALUE
+        expr: INVOICE_VALUE
+        data_type: VARCHAR
+      - name: SNOWFLAKE_VALUE
+        expr: SNOWFLAKE_VALUE
+        data_type: VARCHAR
+    facts:
+      - name: DIFFERENCE_USD
+        description: Dollar impact where numeric (invoice - snowflake)
+        expr: DIFFERENCE_USD
+        data_type: NUMBER
+    metrics:
+      - name: DISCREPANCY_TOTAL
+        description: Number of field-level discrepancies
+        expr: COUNT(DISCREPANCY_ID)
+      - name: DISCREPANCY_IMPACT_USD
+        description: Dollar impact of discrepancies (invoice minus Snowflake)
+        expr: SUM(DIFFERENCE_USD)
+  - name: ORDERS
+    description: "Order headers. Grain: order. Qualifying order = IS_TEST_ORDER =\
+      \ FALSE AND ORDER_STATUS <> 'CANCELLED'."
+    base_table:
+      database: SNOWFLAKE_DEMO
+      schema: CORTEX_SENSE
+      table: ORDERS
+    primary_key:
+      columns:
+        - ORDER_ID
+    dimensions:
+      - name: ORDER_ID
+        description: Primary key
+        expr: ORDER_ID
+        data_type: NUMBER
+      - name: ORDER_STATUS
+        description: PLACED, SHIPPED, DELIVERED, CANCELLED. Always exclude CANCELLED
+          from revenue
+        expr: ORDER_STATUS
+        data_type: VARCHAR
+      - name: IS_TEST_ORDER
+        description: TRUE for QA/test orders created by engineering. ALWAYS filter
+          IS_TEST_ORDER = FALSE
+        expr: IS_TEST_ORDER
+        data_type: BOOLEAN
+    time_dimensions:
+      - name: ORDER_DATE
+        description: 'Calendar date of order. Fiscal year starts Feb 1: FY = YEAR(DATEADD(month,
+          -1, ORDER_DATE))'
+        expr: ORDER_DATE
+        data_type: DATE
+    facts:
+      - name: SHIPPING_USD
+        description: Shipping charged; NOT part of revenue
+        expr: SHIPPING_USD
+        data_type: NUMBER
+  - name: PRODUCTS
+    description: 'Product catalog. Grain: product (SKU).'
+    base_table:
+      database: SNOWFLAKE_DEMO
+      schema: CORTEX_SENSE
+      table: PRODUCTS
+    primary_key:
+      columns:
+        - PRODUCT_ID
+    dimensions:
+      - name: PRODUCT_ID
+        description: Primary key
+        expr: PRODUCT_ID
+        data_type: NUMBER
+      - name: SKU
+        expr: SKU
+        data_type: VARCHAR
+      - name: PRODUCT_NAME
+        expr: PRODUCT_NAME
+        data_type: VARCHAR
+      - name: CATEGORY
+        description: 'Top-level category: CAMPING, CLIMBING, FOOTWEAR, APPAREL, WATER,
+          CYCLING'
+        expr: CATEGORY
+        data_type: VARCHAR
+      - name: BRAND
+        description: SUMMIT is the private-label (house) brand; all others are third-party
+        expr: BRAND
+        data_type: VARCHAR
+relationships:
+  - name: invoice_lines_to_invoices
+    left_table: INVOICE_LINES
+    right_table: INVOICES
+    join_type: left_outer
+    relationship_columns:
+      - left_column: INVOICE_ID
+        right_column: INVOICE_ID
+  - name: discrepancies_to_invoices
+    left_table: INVOICE_DISCREPANCIES
+    right_table: INVOICES
+    join_type: left_outer
+    relationship_columns:
+      - left_column: INVOICE_ID
+        right_column: INVOICE_ID
+  - name: invoices_to_orders
+    left_table: INVOICES
+    right_table: ORDERS
+    join_type: left_outer
+    relationship_columns:
+      - left_column: ORDER_ID
+        right_column: ORDER_ID
+  - name: invoice_lines_to_products
+    left_table: INVOICE_LINES
+    right_table: PRODUCTS
+    join_type: left_outer
+    relationship_columns:
+      - left_column: PRODUCT_ID
+        right_column: PRODUCT_ID
+verified_queries:
+  - name: 0;1
+    question: How many invoices were matched, mismatched, or new, and what was their
+      total value?
+    sql: SELECT MATCH_STATUS, COUNT(*) AS invoices, SUM(TOTAL_USD) AS invoiced_usd
+      FROM invoices GROUP BY MATCH_STATUS
+    verified_at: 1794263135
+    verified_by: Semantic Model Generator
+  - name: 1;1
+    question: What are the most common types of invoice discrepancies and their total
+      dollar impact?
+    sql: SELECT d.FIELD_NAME, COUNT(*) AS discrepancies, SUM(d.DIFFERENCE_USD) AS
+      dollar_impact FROM invoice_discrepancies AS d GROUP BY d.FIELD_NAME ORDER BY
+      discrepancies DESC
+    verified_at: 1794263135
+    verified_by: Semantic Model Generator
+  - name: 2;1
+    question: Which mismatched invoices have the largest variance?
+    sql: SELECT i.INVOICE_NUMBER, i.ORDER_ID, i.VARIANCE_USD FROM invoices AS i WHERE
+      i.MATCH_STATUS = 'MISMATCHED' ORDER BY ABS(i.VARIANCE_USD) DESC
+    verified_at: 1794263135
+    verified_by: Semantic Model Generator
+module_custom_instructions:
+  sql_generation: MATCH_STATUS, LINE_STATUS and SCOPE values are uppercase (MATCHED, MISMATCHED, NEW, EXTRA, MISSING, HEADER, LINE). Variance and discrepancy amounts are invoice minus Snowflake. Invoice totals include shipping; do not compare them to order revenue without adding ORDERS.SHIPPING_USD. Use APPROVED_AT for 'when was it processed' questions and INVOICE_DATE for billing-period questions.

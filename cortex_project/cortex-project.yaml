@@ -1,0 +1,7 @@
+version: 1
+artifacts:
+  - path: INVOICE_RECON_SV.sv.yaml
+    type: semantic_view
+    targets:
+      default:
+        object: SNOWFLAKE_DEMO.CORTEX_SENSE.INVOICE_RECON_SV
