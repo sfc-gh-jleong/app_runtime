@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS INVOICE_LINES (
   UNIT_PRICE       NUMBER(10,2),
   DISCOUNT_AMOUNT  NUMBER(10,2),
   LINE_AMOUNT      NUMBER(12,2)          COMMENT 'Net line amount as printed = qty * unit price - discount',
-  LINE_STATUS      VARCHAR               COMMENT 'MATCHED, MISMATCHED, EXTRA (not on the order), MISSING (on the order, not on the invoice), NEW',
+  LINE_STATUS      VARCHAR               COMMENT 'MATCHED, MISMATCHED, EXTRA (not on the order) or NEW. Order lines missing from the invoice are recorded in INVOICE_DISCREPANCIES (FIELD_NAME = missing_line)',
   CONSTRAINT PK_INVOICE_LINES PRIMARY KEY (INVOICE_ID, LINE_NUMBER)
 ) COMMENT = 'Invoice line items. Grain: invoice line.';
 

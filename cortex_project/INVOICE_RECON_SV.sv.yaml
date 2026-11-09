@@ -151,8 +151,7 @@ tables:
         expr: QUANTITY
         data_type: NUMBER
       - name: LINE_STATUS
-        description: MATCHED, MISMATCHED, EXTRA (not on the order), MISSING (on the
-          order, not on the invoice), NEW
+        description: MATCHED, MISMATCHED, EXTRA (not on the order) or NEW. Order lines missing from the invoice are in INVOICE_DISCREPANCIES with FIELD_NAME = missing_line.
         expr: LINE_STATUS
         data_type: VARCHAR
     facts:
