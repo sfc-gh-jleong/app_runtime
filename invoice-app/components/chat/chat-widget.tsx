@@ -30,7 +30,7 @@ const SUGGESTIONS = [
   "How many invoices matched, mismatched, or were new?",
   "Which mismatched invoices have the largest variance?",
   "What are the most common discrepancy types?",
-  "What was net revenue in FY2025?",
+  "What were net sales by channel in FY2025?",
 ]
 
 export function ChatWidget() {

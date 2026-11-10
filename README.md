@@ -8,8 +8,9 @@ PDF ──upload──▶ @INVOICE_STAGE ──AI_EXTRACT──▶ review (edita
                                                   ▼
                        INVOICES · INVOICE_LINES · INVOICE_DISCREPANCIES  (+ ORDERS / ORDER_ITEMS for NEW)
                                                   │
-                     chat ◀── SUMMIT_RETAIL_AGENT ─┤── INVOICE_RECON_SV (Cortex Analyst)
-                                                   └── RETAIL_SALES (Cortex Sense)
+                     chat ◀── SUMMIT_RETAIL_AGENT ─┤── INVOICE_RECON_SV (Cortex Analyst: invoices)
+                                                   ├── RETAIL_SALES_SV  (Cortex Analyst: sales)
+                                                   └── RETAIL_SALES     (Cortex Sense: definitions)
 ```
 
 ## Repo layout
@@ -32,7 +33,7 @@ PDF ──upload──▶ @INVOICE_STAGE ──AI_EXTRACT──▶ review (edita
 | `02_stage_tables.sql` | `INVOICE_STAGE` (SSE), `INVOICES`, `INVOICE_LINES`, `INVOICE_DISCREPANCIES` |
 | `03_procs.sql` | `UPLOAD_INVOICE` (Python; writes the PDF to the stage) and `APPROVE_INVOICE` (SQL; one transaction, creates ORDERS/ORDER_ITEMS for NEW invoices) |
 | `04_semantic_view.sql` | Grants on `INVOICE_RECON_SV` (deploy the view from `cortex_project/INVOICE_RECON_SV.sv.yaml`) |
-| `05_agent.sql` | Grants for `SUMMIT_RETAIL_AGENT`. VERSION$2 of the agent adds the `invoice_reconciliation` analyst tool |
+| `05_agent.sql` | Grants for `SUMMIT_RETAIL_AGENT` (VERSION$3: `invoice_reconciliation` and `retail_sales` analyst tools plus the Cortex Sense context) |
 | `06_cicd_service_user.sql` | `GHA_INVOICE_APP_SVC`, the OIDC service user for GitHub Actions, plus its user-level network policy |
 
 Run a script with `snow sql -c <key-pair connection> -f sql/0N_*.sql`. The account and connection used here: `SFSENORTHAMERICA-JLEONG_AWS1` with the `osm_deploy` key-pair connection.

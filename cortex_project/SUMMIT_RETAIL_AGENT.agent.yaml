@@ -1,18 +1,22 @@
 models:
   orchestration: "auto"
 instructions:
-  response: "Lead with the answer and the number. State the definition and filters you applied in one line (for example: net of returns, excluding test and cancelled orders, fiscal year starting Feb 1). For invoice answers, name the invoice numbers and order IDs involved and say whether amounts are invoice minus Snowflake. Chart trends with data_to_chart when there are more than 3 rows."
-  orchestration: "Route by topic. Questions about invoices, uploaded or approved invoice PDFs, invoice reconciliation, match status (MATCHED, MISMATCHED, NEW), discrepancies, variances, over-billing, or orders created from invoices go to invoice_reconciliation. Retail performance questions (net revenue, orders, returns and refunds, products, brands, stores, channels, regions, loyalty customers, campaigns, fiscal years) go to retail_sales_context: always call retail_sales_context first with the user question verbatim before writing any SQL. Use ontology_node documents for metric definitions, table_entity documents for grain, joins and default filters, and qbe documents as SQL precedent (prefer the highest EXECUTION_COUNT). Apply every returned correction. Then run SQL with system_execute_sql. Apply the default filters from the context unless the user overrides them. When a question spans both (for example invoiced amounts versus order revenue), use invoice_reconciliation for the invoice side and retail_sales_context for the order side, then combine the results. If a table is not readable by the user, say so rather than substituting another table."
+  response: "Lead with the answer and the number. State the definition and filters you applied in one line (for example: net sales before returns, qualifying orders only, fiscal year starting Feb 1). For invoice answers, name the invoice numbers and order IDs involved and say whether amounts are invoice minus Snowflake. Chart trends with data_to_chart when there are more than 3 rows."
+  orchestration: "Route by topic. (1) Invoices: questions about invoices, uploaded or approved invoice PDFs, invoice reconciliation, match status (MATCHED, MISMATCHED, NEW), discrepancies, variances, over-billing, or orders created from invoices go to invoice_reconciliation. (2) Retail sales: questions about net sales, order counts, average order value, fiscal years, regions, channels (store vs online), stores, brands (including the SUMMIT private label), product categories, loyalty tiers or order status go to retail_sales. Always count only qualifying orders (IS_QUALIFYING = TRUE: not test, not cancelled) unless the user asks otherwise; fiscal year starts Feb 1. You may call retail_sales_context first for business definitions and corrections, but run retail queries through retail_sales rather than writing SQL yourself. (3) Only for retail topics retail_sales does not cover (returns and refunds, net revenue after returns, gross margin, marketing campaigns) use retail_sales_context and then system_execute_sql; if that is not possible, say what is unavailable and offer net sales before returns from retail_sales as the closest measure. (4) When a question spans both (for example invoiced amounts versus order sales), use invoice_reconciliation for the invoice side and retail_sales for the order side, then combine the results. If a table is not readable by the user, say so rather than substituting another table."
   sample_questions:
     - question: "How many invoices matched, mismatched, or were new?"
     - question: "Which mismatched invoices have the largest variance?"
-    - question: "What are the most common invoice discrepancy types?"
-    - question: "What was net revenue in FY2025?"
+    - question: "What were net sales by channel in FY2025?"
+    - question: "Which product categories had the most orders this fiscal year?"
 tools:
   - tool_spec:
       type: "cortex_sense"
       name: "retail_sales_context"
       description: "Business context for Summit Outfitters retail: net revenue, orders, returns and refunds, products and private-label brand, stores and online channel, regions, loyalty customers, marketing campaigns and fiscal-year reporting."
+  - tool_spec:
+      type: "cortex_analyst_text_to_sql"
+      name: "retail_sales"
+      description: "Summit Outfitters retail sales from orders and order lines: net sales before returns, order counts, by order date and fiscal year (starts Feb 1), order status and the qualifying-order flag, store, region and channel (store vs online), product brand (SUMMIT is private label) and category, and customer loyalty tier. Does not include returns, refunds, net revenue after returns or gross margin."
   - tool_spec:
       type: "cortex_analyst_text_to_sql"
       name: "invoice_reconciliation"
@@ -23,6 +27,11 @@ tools:
 tool_resources:
   retail_sales_context:
     context_name: "SNOWFLAKE_DEMO.CORTEX_SENSE.RETAIL_SALES"
+    execution_environment:
+      type: "warehouse"
+      warehouse: "COMPUTE_WH"
+  retail_sales:
+    semantic_view: "SNOWFLAKE_DEMO.CORTEX_SENSE.RETAIL_SALES_SV"
     execution_environment:
       type: "warehouse"
       warehouse: "COMPUTE_WH"
